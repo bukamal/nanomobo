@@ -16,7 +16,9 @@ from nanomobo.core.identity import (
 )
 from nanomobo.core.theme import Colors, Radius, Shadow, Spacing
 from nanomobo.core.usb_bridge import UsbDeviceInfo
+from nanomobo.protocols.base import ProbeStatus
 from nanomobo.services.device_service import DeviceService
+from nanomobo.services.protocol_service import ProtocolService
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ class HomeView(ft.Column):
     def __init__(self, page: ft.Page, service: DeviceService | None = None) -> None:
         self._page = page
         self._service = service if service is not None else DeviceService()
+        self._protocol_service = ProtocolService()
         self._refresh_generation = 0
         self._closed = False
         self._status = ft.Text("جاهز لاكتشاف الأجهزة", color=Colors.TEXT_SECONDARY)
@@ -46,6 +49,8 @@ class HomeView(ft.Column):
         )
         self._permission_status = ft.Text("", color=Colors.TEXT_SECONDARY)
         self._permission_button: ft.Button | None = None
+        self._protocol_result = ft.Text("", color=Colors.TEXT_SECONDARY)
+        self._protocol_button: ft.Button | None = None
         self._selected_device_name: str | None = None
         self._identity_primary = ft.TextField(
             label="IMEI/MEID الأساسي",
@@ -266,6 +271,14 @@ class HomeView(ft.Column):
                 ),
             ]
         )
+        self._protocol_result.value = "لم يتم فحص البروتوكول بعد"
+        self._protocol_button = ft.Button(
+            "فحص البروتوكول",
+            on_click=lambda _event, selected=device: self._probe_protocol(selected),
+            color=Colors.PRIMARY,
+            bgcolor=Colors.BACKGROUND_ALT,
+        )
+        details.extend([self._protocol_result, self._protocol_button])
         for interface in device.interfaces:
             endpoints = ", ".join(
                 f"{endpoint.direction}:{endpoint.transfer_type}" for endpoint in interface.endpoints
@@ -315,6 +328,17 @@ class HomeView(ft.Column):
             self._permission_button.disabled = False
         self._safe_update()
 
+    def _probe_protocol(self, device: UsbDeviceInfo) -> None:
+        result = self._protocol_service.inspect(device)
+        self._protocol_result.value = f"{result.label}: {result.detail}"
+        if result.status is ProbeStatus.RECOGNIZED:
+            self._protocol_result.color = Colors.SUCCESS
+        elif result.status is ProbeStatus.EXPERIMENTAL:
+            self._protocol_result.color = Colors.WARNING_DARK
+        else:
+            self._protocol_result.color = Colors.TEXT_SECONDARY
+        self._safe_update()
+
     def _on_identity_check(self, _event: ft.Event[ft.Button]) -> None:
         primary = self._identity_primary.value or ""
         secondary = self._identity_secondary.value or ""
@@ -359,6 +383,8 @@ class HomeView(ft.Column):
         self._details_panel.visible = False
         self._permission_status.value = ""
         self._permission_button = None
+        self._protocol_result.value = ""
+        self._protocol_button = None
 
     def _safe_update(self) -> None:
         try:

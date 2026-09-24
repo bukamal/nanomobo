@@ -31,7 +31,7 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 12266719
-          packages: platform-tools
+          packages: platform-tools platforms;android-31 build-tools;31.0.0
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: true
       - run: flutter precache --android

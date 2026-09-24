@@ -15,7 +15,11 @@ src/nanomobo/core/theme.py
 src/nanomobo/core/theme_settings.py
 src/nanomobo/core/toast.py
 src/nanomobo/core/usb_bridge.py
+src/nanomobo/protocols/__init__.py
+src/nanomobo/protocols/base.py
+src/nanomobo/protocols/descriptor_probe.py
 src/nanomobo/services/__init__.py
 src/nanomobo/services/device_service.py
+src/nanomobo/services/protocol_service.py
 src/nanomobo/views/__init__.py
 src/nanomobo/views/home_view.py

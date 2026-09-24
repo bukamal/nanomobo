@@ -81,6 +81,8 @@ def test_device_details_expose_interfaces_and_permission_action() -> None:
     assert view._permission_button is not None
     assert view._permission_status.value == "لم يتم طلب صلاحية USB بعد"
     assert view._selected_device_name == "1/1"
+    view._probe_protocol(device)
+    assert "MediaTek USB" in str(view._protocol_result.value)
 
 
 def test_identity_panel_validates_and_compares_without_writing() -> None:
