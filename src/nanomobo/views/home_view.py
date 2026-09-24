@@ -8,6 +8,16 @@ import flet as ft
 from nanomobo.core.capabilities import capabilities_for
 from nanomobo.core.device_db import DeviceModeLabel
 from nanomobo.core.device_intelligence import ConfidenceBand, analyze_device
+from nanomobo.core.repair_assistant import (
+    PlanStep,
+    RepairPlan,
+    RISK_LABELS,
+    RiskLevel,
+    StepKind,
+    SYMTOMS,
+    Symptom,
+    create_repair_plan,
+)
 from nanomobo.core.identity import (
     IdentityKind,
     IdentityMatch,
