@@ -94,3 +94,23 @@ def test_identity_panel_validates_and_compares_without_writing() -> None:
     assert "IMEI" in str(view._identity_result.value)
     assert "متطابقتان" in str(view._identity_result.value)
     assert "تعديل" not in str(view._identity_result.value)
+
+
+def test_device_details_include_intelligence_panel_and_safe_recommendations() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    device = UsbDeviceInfo(
+        device_name="1/1",
+        vendor_id=0x05C6,
+        product_id=0x9008,
+        device_class=0xFF,
+        product="Test Device",
+    )
+    panel = view._intelligence_panel(device)
+    assert isinstance(panel, ft.Container)
+    assert isinstance(panel.content, ft.Column)
+
+    texts = [control.value for control in panel.content.controls if isinstance(control, ft.Text)]
+    assert any("التحليل الذكي" in value for value in texts)
+    assert any("%" in value for value in texts)
+    assert any("قراءة فقط" in value for value in texts)

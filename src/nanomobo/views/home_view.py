@@ -7,6 +7,7 @@ import flet as ft
 
 from nanomobo.core.capabilities import capabilities_for
 from nanomobo.core.device_db import DeviceModeLabel
+from nanomobo.core.device_intelligence import ConfidenceBand, analyze_device
 from nanomobo.core.identity import (
     IdentityKind,
     IdentityMatch,
@@ -294,6 +295,7 @@ class HomeView(ft.Column):
                     color=Colors.TEXT_SECONDARY,
                 )
             )
+        details.append(self._intelligence_panel(device))
         self._details.controls = [*details, self._permission_button, self._permission_status]
         self._details_panel.visible = True
         self._safe_update()
@@ -338,6 +340,90 @@ class HomeView(ft.Column):
         else:
             self._protocol_result.color = Colors.TEXT_SECONDARY
         self._safe_update()
+
+    def _intelligence_panel(self, device: UsbDeviceInfo) -> ft.Container:
+        report = analyze_device(device)
+        band_text = {
+            ConfidenceBand.HIGH: "عالية",
+            ConfidenceBand.MEDIUM: "متوسطة",
+            ConfidenceBand.LOW: "منخفضة",
+        }[report.band]
+        band_color = {
+            ConfidenceBand.HIGH: Colors.SUCCESS,
+            ConfidenceBand.MEDIUM: Colors.WARNING_DARK,
+            ConfidenceBand.LOW: Colors.DANGER,
+        }[report.band]
+        controls: list[Any] = [
+            ft.Text(
+                "التحليل الذكي",
+                size=18,
+                weight=ft.FontWeight.W_700,
+                color=Colors.TEXT_PRIMARY,
+            ),
+            ft.Text(report.summary, size=13, color=Colors.TEXT_MUTED),
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        f"الثقة: {report.confidence}%",
+                        size=13,
+                        weight=ft.FontWeight.W_600,
+                        color=band_color,
+                    ),
+                    ft.Container(
+                        content=ft.Text(f"مستوى: {band_text}", size=12, color=band_color),
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=5),
+                        border_radius=999,
+                        bgcolor=Colors.BACKGROUND_ALT,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            ft.ProgressBar(
+                value=report.confidence / 100,
+                bar_height=8,
+                color=band_color,
+                bgcolor=Colors.BACKGROUND_ALT,
+                border_radius=8,
+            ),
+            ft.Text(
+                "أسباب التصنيف",
+                size=14,
+                weight=ft.FontWeight.W_600,
+                color=Colors.TEXT_PRIMARY,
+            ),
+        ]
+        controls.extend(
+            ft.Text(
+                f"• {item.title}: {item.detail}",
+                size=11.5,
+                color=Colors.TEXT_SECONDARY,
+            )
+            for item in report.evidence
+        )
+        controls.append(
+            ft.Text(
+                "التوصيات الآمنة",
+                size=14,
+                weight=ft.FontWeight.W_600,
+                color=Colors.TEXT_PRIMARY,
+            )
+        )
+        controls.extend(
+            ft.Text(
+                f"• {item.title}: {item.detail}",
+                size=11.5,
+                color=Colors.TEXT_MUTED,
+            )
+            for item in report.recommendations
+        )
+        return ft.Container(
+            content=ft.Column(controls, spacing=Spacing.XS),
+            padding=Spacing.LG,
+            bgcolor=Colors.WHITE,
+            border_radius=Radius.MD,
+            border=ft.Border.all(1, Colors.BORDER),
+            shadow=Shadow.SM,
+        )
 
     def _on_identity_check(self, _event: ft.Event[ft.Button]) -> None:
         primary = self._identity_primary.value or ""
