@@ -1,0 +1,11 @@
+flet==0.85.2
+
+[dev]
+flet-cli==0.85.2
+mypy<2,>=1.11
+pytest-cov<8,>=5
+pytest<10,>=8
+ruff<1,>=0.6
+
+[dev:python_version < "3.11"]
+tomli>=2.0

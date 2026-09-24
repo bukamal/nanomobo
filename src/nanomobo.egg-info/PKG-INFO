@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: nanomobo
+Version: 0.1.0
+Summary: NanoMobo — Android mobile-device servicing and flashing toolkit
+Requires-Python: >=3.10
+Requires-Dist: flet==0.85.2
+Provides-Extra: dev
+Requires-Dist: flet-cli==0.85.2; extra == "dev"
+Requires-Dist: mypy<2,>=1.11; extra == "dev"
+Requires-Dist: pytest-cov<8,>=5; extra == "dev"
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: ruff<1,>=0.6; extra == "dev"
+Requires-Dist: tomli>=2.0; python_version < "3.11" and extra == "dev"
