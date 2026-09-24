@@ -64,3 +64,31 @@ def test_device_card_uses_stable_mode_labels() -> None:
     assert isinstance(mode_badge, ft.Container)
     assert isinstance(mode_badge.content, ft.Text)
     assert mode_badge.content.value == "Qualcomm EDL 9008"
+
+
+def test_device_details_expose_interfaces_and_permission_action() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    device = UsbDeviceInfo(
+        device_name="1/1",
+        vendor_id=0x0E8D,
+        product_id=0x1234,
+        device_class=0xFF,
+        interfaces=[],
+    )
+    view._select_device(device)
+    assert view._details_panel.visible is True
+    assert view._permission_button is not None
+    assert view._permission_status.value == "لم يتم طلب صلاحية USB بعد"
+    assert view._selected_device_name == "1/1"
+
+
+def test_identity_panel_validates_and_compares_without_writing() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._identity_primary.value = "490154203237518"
+    view._identity_secondary.value = "490154203237518"
+    view._on_identity_check(cast(ft.Event[ft.Button], object()))
+    assert "IMEI" in str(view._identity_result.value)
+    assert "متطابقتان" in str(view._identity_result.value)
+    assert "تعديل" not in str(view._identity_result.value)

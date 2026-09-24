@@ -17,6 +17,21 @@ class FakeHost:
             )
         ]
         self.closed = False
+        self.permission = False
+        self.requested_device = ""
+
+    def find_device(self, device_name: str) -> object:
+        self.requested_device = device_name
+        return object()
+
+    def has_permission(self, raw: object) -> bool:
+        del raw
+        return self.permission
+
+    def request_permission(self, raw: object, timeout: float) -> bool:
+        del raw, timeout
+        self.permission = True
+        return True
 
     def list_devices(self) -> list[UsbDeviceInfo]:
         return self.devices
@@ -59,4 +74,17 @@ def test_device_service_reuses_and_closes_host() -> None:
     assert providers == 1
     service.close()
     assert host.closed is True
+    service.close()
+
+
+def test_device_service_requests_permission_for_named_device() -> None:
+    host = FakeHost()
+    service = DeviceService(
+        provider=lambda: cast(UsbHost, host),
+        platform_detector=lambda: True,
+    )
+    assert service.has_permission("1/1") is False
+    assert service.request_permission("1/1", timeout=0.1) is True
+    assert service.has_permission("1/1") is True
+    assert host.requested_device == "1/1"
     service.close()

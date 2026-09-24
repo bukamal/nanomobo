@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import flet as ft
 
+from nanomobo.core.capabilities import capabilities_for
 from nanomobo.core.device_db import DeviceModeLabel
+from nanomobo.core.identity import (
+    IdentityKind,
+    IdentityMatch,
+    IdentityValidation,
+    compare_identity,
+    validate_identity,
+)
 from nanomobo.core.theme import Colors, Radius, Shadow, Spacing
 from nanomobo.core.usb_bridge import UsbDeviceInfo
 from nanomobo.services.device_service import DeviceService
@@ -26,6 +35,60 @@ class HomeView(ft.Column):
             bgcolor=Colors.PRIMARY,
         )
         self._devices = ft.Column(spacing=Spacing.MD)
+        self._details = ft.Column(spacing=Spacing.SM)
+        self._details_panel = ft.Container(
+            content=self._details,
+            visible=False,
+            padding=Spacing.LG,
+            bgcolor=Colors.WHITE,
+            border_radius=Radius.MD,
+            border=ft.Border.all(1, Colors.BORDER),
+        )
+        self._permission_status = ft.Text("", color=Colors.TEXT_SECONDARY)
+        self._permission_button: ft.Button | None = None
+        self._selected_device_name: str | None = None
+        self._identity_primary = ft.TextField(
+            label="IMEI/MEID الأساسي",
+            hint_text="أدخل الرقم للقراءة أو المقارنة فقط",
+            text_size=13,
+        )
+        self._identity_secondary = ft.TextField(
+            label="IMEI/MEID الاحتياطي",
+            hint_text="اختياري",
+            text_size=13,
+        )
+        self._identity_result = ft.Text("", color=Colors.TEXT_SECONDARY)
+        self._identity_panel = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "تشخيص الهوية",
+                        size=18,
+                        weight=ft.FontWeight.W_700,
+                        color=Colors.TEXT_PRIMARY,
+                    ),
+                    ft.Text(
+                        "تحقق من الصيغة ومقارنة النسخ فقط؛ لا يتم تعديل أي IMEI أو MEID.",
+                        size=12.5,
+                        color=Colors.TEXT_SECONDARY,
+                    ),
+                    self._identity_primary,
+                    self._identity_secondary,
+                    ft.Button(
+                        "تحقق وقارن",
+                        on_click=self._on_identity_check,
+                        color=Colors.WHITE,
+                        bgcolor=Colors.PRIMARY,
+                    ),
+                    self._identity_result,
+                ],
+                spacing=Spacing.SM,
+            ),
+            padding=Spacing.LG,
+            bgcolor=Colors.WHITE,
+            border_radius=Radius.MD,
+            border=ft.Border.all(1, Colors.BORDER),
+        )
 
         super().__init__(
             controls=[
@@ -43,6 +106,8 @@ class HomeView(ft.Column):
                 self._refresh_button,
                 self._status,
                 self._devices,
+                self._details_panel,
+                self._identity_panel,
             ],
             spacing=Spacing.MD,
             scroll=ft.ScrollMode.AUTO,
@@ -96,6 +161,7 @@ class HomeView(ft.Column):
         self._service.close()
 
     def _render_devices(self, devices: list[UsbDeviceInfo]) -> None:
+        self._clear_details()
         if not devices:
             self._devices.controls = [
                 ft.Container(
@@ -137,6 +203,12 @@ class HomeView(ft.Column):
                         border_radius=999,
                         bgcolor=Colors.PRIMARY_BG,
                     ),
+                    ft.Button(
+                        "عرض التفاصيل",
+                        on_click=lambda _event, selected=device: self._select_device(selected),
+                        color=Colors.PRIMARY,
+                        bgcolor=Colors.BACKGROUND_ALT,
+                    ),
                 ],
                 spacing=Spacing.SM,
             ),
@@ -146,6 +218,147 @@ class HomeView(ft.Column):
             border=ft.Border.all(1, Colors.BORDER),
             shadow=Shadow.SM,
         )
+
+    def _select_device(self, device: UsbDeviceInfo) -> None:
+        self._selected_device_name = device.device_name
+        self._permission_status.value = "لم يتم طلب صلاحية USB بعد"
+        self._permission_button = ft.Button(
+            "طلب صلاحية USB",
+            on_click=lambda _event: self._request_permission(device.device_name),
+            color=Colors.WHITE,
+            bgcolor=Colors.PRIMARY,
+        )
+        details: list[Any] = [
+            ft.Text(
+                device.display_name,
+                size=18,
+                weight=ft.FontWeight.W_700,
+                color=Colors.TEXT_PRIMARY,
+            ),
+            ft.Text(
+                f"VID:PID {device.id_label}  •  Manufacturer: {device.manufacturer or 'غير متاح'}",
+                size=12.5,
+                color=Colors.TEXT_SECONDARY,
+            ),
+            ft.Text(
+                f"Serial: {device.serial_number or 'غير متاح'}",
+                size=12.5,
+                color=Colors.TEXT_SECONDARY,
+            ),
+            ft.Text(
+                f"الوضع: {DeviceModeLabel[device.mode.name].value}",
+                size=12.5,
+                color=Colors.PRIMARY,
+            ),
+        ]
+        capabilities = capabilities_for(device.mode)
+        details.extend(
+            [
+                ft.Text(
+                    f"القدرات: {capabilities.summary}",
+                    size=12.5,
+                    color=Colors.TEXT_PRIMARY,
+                ),
+                ft.Text(
+                    "الفلاش والكتابة غير مفعّلين حتى توثيق البروتوكول والتحقق من الجهاز.",
+                    size=12,
+                    color=Colors.WARNING_DARK,
+                ),
+            ]
+        )
+        for interface in device.interfaces:
+            endpoints = ", ".join(
+                f"{endpoint.direction}:{endpoint.transfer_type}" for endpoint in interface.endpoints
+            )
+            details.append(
+                ft.Text(
+                    f"Interface {interface.index}: "
+                    f"class=0x{interface.interface_class:02X}, "
+                    f"subclass=0x{interface.subclass:02X}, "
+                    f"protocol=0x{interface.protocol:02X}, "
+                    f"endpoints={endpoints or 'لا يوجد'}",
+                    size=11.5,
+                    color=Colors.TEXT_SECONDARY,
+                )
+            )
+        self._details.controls = [*details, self._permission_button, self._permission_status]
+        self._details_panel.visible = True
+        self._safe_update()
+
+    def _request_permission(self, device_name: str) -> None:
+        if self._closed or not self._service.supported:
+            return
+        if self._permission_button is None:
+            return
+        self._refresh_generation += 1
+        generation = self._refresh_generation
+        self._permission_button.disabled = True
+        self._permission_status.value = "جارٍ انتظار موافقة Android..."
+        self._safe_update()
+        self._page.run_thread(self._load_permission, device_name, generation)
+
+    def _load_permission(self, device_name: str, generation: int) -> None:
+        try:
+            granted = self._service.request_permission(device_name)
+        except Exception:
+            logger.exception("USB permission request failed")
+            if self._closed or generation != self._refresh_generation:
+                return
+            self._permission_status.value = "تعذر طلب صلاحية USB"
+        else:
+            if self._closed or generation != self._refresh_generation:
+                return
+            self._permission_status.value = (
+                "تم منح صلاحية USB" if granted else "تم رفض أو انتهاء صلاحية الطلب"
+            )
+        if self._permission_button is not None:
+            self._permission_button.disabled = False
+        self._safe_update()
+
+    def _on_identity_check(self, _event: ft.Event[ft.Button]) -> None:
+        primary = self._identity_primary.value or ""
+        secondary = self._identity_secondary.value or ""
+        if not primary.strip():
+            self._identity_result.value = "أدخلIMEI/MEID الأساسي أولًا"
+            self._identity_result.color = Colors.WARNING_DARK
+            self._safe_update()
+            return
+
+        primary_validation = validate_identity(primary)
+        messages = [self._identity_message(primary_validation)]
+        result_color = Colors.SUCCESS if primary_validation.valid_format else Colors.DANGER
+        if secondary.strip():
+            secondary_validation = validate_identity(secondary)
+            messages.append(self._identity_message(secondary_validation))
+            comparison = compare_identity(primary, secondary)
+            if comparison.result is IdentityMatch.MATCH:
+                messages.append("النسختان متطابقتان")
+            elif comparison.result is IdentityMatch.MISMATCH:
+                messages.append("توجد اختلافات بين النسختين")
+                result_color = Colors.DANGER
+            else:
+                messages.append("لا يمكن مقارنة قيمة ناقصة")
+                result_color = Colors.WARNING_DARK
+        self._identity_result.value = "  •  ".join(messages)
+        self._identity_result.color = result_color
+        self._safe_update()
+
+    @staticmethod
+    def _identity_message(validation: IdentityValidation) -> str:
+        if validation.kind is IdentityKind.IMEI:
+            if validation.valid_format:
+                return "IMEI: الصيغة ورقم التحقق صحيحة"
+            return "IMEI: الصيغة أو رقم التحقق غير صالح"
+        if validation.kind is IdentityKind.MEID:
+            return "MEID: الطول صالح؛ لا يثبت ذلك المصدر أو الأصالة"
+        return "المعرّف: الطول أو الصيغة غير معروفة"
+
+    def _clear_details(self) -> None:
+        self._selected_device_name = None
+        self._details.controls = []
+        self._details_panel.visible = False
+        self._permission_status.value = ""
+        self._permission_button = None
 
     def _safe_update(self) -> None:
         try:

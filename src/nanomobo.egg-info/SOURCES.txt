@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 src/main.py
 src/nanomobo/__init__.py
@@ -7,6 +8,7 @@ src/nanomobo.egg-info/dependency_links.txt
 src/nanomobo.egg-info/requires.txt
 src/nanomobo.egg-info/top_level.txt
 src/nanomobo/core/__init__.py
+src/nanomobo/core/capabilities.py
 src/nanomobo/core/device_db.py
 src/nanomobo/core/identity.py
 src/nanomobo/core/theme.py

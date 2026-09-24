@@ -25,13 +25,31 @@ class DeviceService:
     def supported(self) -> bool:
         return self._platform_detector()
 
-    def list_devices(self) -> list[UsbDeviceInfo]:
+    def _require_host(self) -> UsbHost:
         if not self.supported:
             raise UnsupportedPlatformError("Android USB Host is required")
         with self._lock:
             if self._host is None:
                 self._host = self._provider()
-            return self._host.list_devices()
+            return self._host
+
+    def list_devices(self) -> list[UsbDeviceInfo]:
+        with self._lock:
+            return self._require_host().list_devices()
+
+    def has_permission(self, device_name: str) -> bool:
+        with self._lock:
+            host = self._require_host()
+            raw = host.find_device(device_name)
+            return raw is not None and host.has_permission(raw)
+
+    def request_permission(self, device_name: str, timeout: float = 20.0) -> bool:
+        with self._lock:
+            host = self._require_host()
+            raw = host.find_device(device_name)
+            if raw is None:
+                return False
+            return host.request_permission(raw, timeout)
 
     def close(self) -> None:
         with self._lock:
