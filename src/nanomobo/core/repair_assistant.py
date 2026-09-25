@@ -60,7 +60,7 @@ class RepairPlan:
         return self.read_only and self.writes_locked
 
 
-SYMTOMS: tuple[tuple[Symptom, str], ...] = (
+SYMPTOMS: tuple[tuple[Symptom, str], ...] = (
     (Symptom.DEVICE_NOT_BOOTING, "الجهاز لا يشغل"),
     (Symptom.STUCK_ON_LOGO, "معلق على الشعار"),
     (Symptom.USB_NOT_DETECTED, "USB غير مكتشف"),
@@ -247,8 +247,7 @@ def _report_text(
         "Steps:",
     ]
     lines.extend(
-        f"{index}. {step.title}: {step.detail}"
-        for index, step in enumerate(plan.steps, start=1)
+        f"{index}. {step.title}: {step.detail}" for index, step in enumerate(plan.steps, start=1)
     )
     lines.append("Warnings:")
     lines.extend(f"- {warning}" for warning in plan.warnings)
@@ -257,17 +256,17 @@ def _report_text(
 
 
 __all__ = [
+    "RISK_LABELS",
+    "SYMPTOMS",
     "PlanStep",
     "RepairPlan",
-    "RISK_LABELS",
     "RiskLevel",
     "StepKind",
-    "SYMTOMS",
     "Symptom",
-    "create_repair_plan",
-    "_symptom_label",
+    "_report_text",
     "_risk_for",
     "_steps_for",
+    "_symptom_label",
     "_warnings_for",
-    "_report_text",
+    "create_repair_plan",
 ]

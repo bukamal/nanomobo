@@ -8,16 +8,6 @@ import flet as ft
 from nanomobo.core.capabilities import capabilities_for
 from nanomobo.core.device_db import DeviceModeLabel
 from nanomobo.core.device_intelligence import ConfidenceBand, analyze_device
-from nanomobo.core.repair_assistant import (
-    PlanStep,
-    RepairPlan,
-    RISK_LABELS,
-    RiskLevel,
-    StepKind,
-    SYMTOMS,
-    Symptom,
-    create_repair_plan,
-)
 from nanomobo.core.identity import (
     IdentityKind,
     IdentityMatch,
@@ -25,13 +15,30 @@ from nanomobo.core.identity import (
     compare_identity,
     validate_identity,
 )
+from nanomobo.core.repair_assistant import (
+    RISK_LABELS,
+    SYMPTOMS,
+    PlanStep,
+    RepairPlan,
+    RiskLevel,
+    StepKind,
+    Symptom,
+    create_repair_plan,
+)
 from nanomobo.core.theme import Colors, Radius, Shadow, Spacing
+from nanomobo.core.toast import toast
 from nanomobo.core.usb_bridge import UsbDeviceInfo
 from nanomobo.protocols.base import ProbeStatus
 from nanomobo.services.device_service import DeviceService
 from nanomobo.services.protocol_service import ProtocolService
 
 logger = logging.getLogger(__name__)
+
+_STEP_KIND_STYLE: dict[StepKind, tuple[str, str]] = {
+    StepKind.CHECK: ("تحقق", Colors.PRIMARY),
+    StepKind.SAFE: ("آمن", Colors.SUCCESS),
+    StepKind.CAUTION: ("حذر", Colors.WARNING_DARK),
+}
 
 
 class HomeView(ft.Column):
@@ -62,7 +69,41 @@ class HomeView(ft.Column):
         self._permission_button: ft.Button | None = None
         self._protocol_result = ft.Text("", color=Colors.TEXT_SECONDARY)
         self._protocol_button: ft.Button | None = None
+        self._selected_device: UsbDeviceInfo | None = None
         self._selected_device_name: str | None = None
+        self._symptom_dropdown = ft.Dropdown(
+            label="العَرَض الملاحظ",
+            text_size=13,
+            options=[
+                ft.DropdownOption(key=symptom.value, text=label) for symptom, label in SYMPTOMS
+            ],
+            on_select=self._on_symptom_selected,
+        )
+        self._repair_result = ft.Column(spacing=Spacing.SM)
+        self._repair_panel = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "مساعد الإصلاح",
+                        size=18,
+                        weight=ft.FontWeight.W_700,
+                        color=Colors.TEXT_PRIMARY,
+                    ),
+                    ft.Text(
+                        "خطة قراءة فقط: تحقق ووثّق الحالة دون أي كتابة أو فلاش أو تعديل معرفات.",
+                        size=12.5,
+                        color=Colors.TEXT_SECONDARY,
+                    ),
+                    self._symptom_dropdown,
+                    self._repair_result,
+                ],
+                spacing=Spacing.SM,
+            ),
+            padding=Spacing.LG,
+            bgcolor=Colors.WHITE,
+            border_radius=Radius.MD,
+            border=ft.Border.all(1, Colors.BORDER),
+        )
         self._identity_primary = ft.TextField(
             label="IMEI/MEID الأساسي",
             hint_text="أدخل الرقم للقراءة أو المقارنة فقط",
@@ -123,6 +164,7 @@ class HomeView(ft.Column):
                 self._status,
                 self._devices,
                 self._details_panel,
+                self._repair_panel,
                 self._identity_panel,
             ],
             spacing=Spacing.MD,
@@ -159,6 +201,7 @@ class HomeView(ft.Column):
                 return
             self._status.value = f"تعذر اكتشاف الأجهزة: {type(exc).__name__}"
             devices = []
+            toast(self._page, self._status.value or "", kind="error")
         else:
             if self._closed or generation != self._refresh_generation:
                 return
@@ -236,6 +279,7 @@ class HomeView(ft.Column):
         )
 
     def _select_device(self, device: UsbDeviceInfo) -> None:
+        self._selected_device = device
         self._selected_device_name = device.device_name
         self._permission_status.value = "لم يتم طلب صلاحية USB بعد"
         self._permission_button = ft.Button(
@@ -330,12 +374,16 @@ class HomeView(ft.Column):
             if self._closed or generation != self._refresh_generation:
                 return
             self._permission_status.value = "تعذر طلب صلاحية USB"
+            toast(self._page, self._permission_status.value or "", kind="error")
         else:
             if self._closed or generation != self._refresh_generation:
                 return
-            self._permission_status.value = (
-                "تم منح صلاحية USB" if granted else "تم رفض أو انتهاء صلاحية الطلب"
-            )
+            if granted:
+                self._permission_status.value = "تم منح صلاحية USB"
+                toast(self._page, self._permission_status.value or "", kind="success")
+            else:
+                self._permission_status.value = "تم رفض أو انتهاء صلاحية الطلب"
+                toast(self._page, self._permission_status.value or "", kind="warning")
         if self._permission_button is not None:
             self._permission_button.disabled = False
         self._safe_update()
@@ -435,12 +483,132 @@ class HomeView(ft.Column):
             shadow=Shadow.SM,
         )
 
+    def _on_symptom_selected(self, _event: ft.Event[ft.Dropdown]) -> None:
+        self._render_repair_plan()
+
+    def _render_repair_plan(self) -> None:
+        device = self._selected_device
+        raw_key = self._symptom_dropdown.value
+        if device is None:
+            self._repair_result.controls = [
+                ft.Text(
+                    "اختر جهازًا من القائمة أولًا لعرض خطة الإصلاح.",
+                    color=Colors.TEXT_SECONDARY,
+                )
+            ]
+            self._safe_update()
+            return
+        if not raw_key:
+            self._repair_result.controls = [
+                ft.Text("اختر العَرَض الملاحظ لإنشاء الخطة.", color=Colors.TEXT_SECONDARY)
+            ]
+            self._safe_update()
+            return
+        try:
+            symptom = Symptom(raw_key)
+        except ValueError:
+            logger.warning("Unknown symptom key: %s", raw_key)
+            self._repair_result.controls = [ft.Text("عرض غير معروف.", color=Colors.DANGER)]
+            self._safe_update()
+            return
+        plan = create_repair_plan(device, symptom)
+        self._repair_result.controls = self._plan_controls(plan)
+        self._safe_update()
+
+    def _plan_controls(self, plan: RepairPlan) -> list[Any]:
+        risk_color = {
+            RiskLevel.LOW: Colors.SUCCESS,
+            RiskLevel.MODERATE: Colors.WARNING_DARK,
+            RiskLevel.ELEVATED: Colors.DANGER,
+        }[plan.risk]
+        controls: list[Any] = [
+            ft.Text(plan.summary, size=13, color=Colors.TEXT_PRIMARY),
+            ft.Container(
+                content=ft.Text(
+                    f"المخاطر: {RISK_LABELS[plan.risk]}",
+                    size=12,
+                    color=risk_color,
+                ),
+                padding=ft.Padding.symmetric(horizontal=10, vertical=5),
+                border_radius=999,
+                bgcolor=Colors.BACKGROUND_ALT,
+            ),
+            ft.Text("الخطوات", size=14, weight=ft.FontWeight.W_600, color=Colors.TEXT_PRIMARY),
+        ]
+        for index, step in enumerate(plan.steps, start=1):
+            controls.append(self._plan_step_row(index, step))
+        if plan.warnings:
+            controls.append(
+                ft.Text(
+                    "تحذيرات",
+                    size=14,
+                    weight=ft.FontWeight.W_600,
+                    color=Colors.WARNING_DARK,
+                )
+            )
+            controls.extend(
+                ft.Text(f"• {warning}", size=11.5, color=Colors.WARNING_DARK)
+                for warning in plan.warnings
+            )
+        controls.append(
+            ft.Text(
+                "التقرير الكامل (قابل للنسخ)",
+                size=14,
+                weight=ft.FontWeight.W_600,
+                color=Colors.TEXT_PRIMARY,
+            )
+        )
+        controls.append(
+            ft.Container(
+                content=ft.Text(plan.report_text, size=11.5, selectable=True, no_wrap=False),
+                padding=Spacing.MD,
+                bgcolor=Colors.BACKGROUND_ALT,
+                border_radius=Radius.SM,
+            )
+        )
+        return controls
+
+    @staticmethod
+    def _plan_step_row(index: int, step: PlanStep) -> ft.Row:
+        kind_label, kind_color = _STEP_KIND_STYLE[step.kind]
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    content=ft.Text(
+                        f"{index}",
+                        size=12,
+                        weight=ft.FontWeight.W_700,
+                        color=Colors.WHITE,
+                    ),
+                    width=24,
+                    height=24,
+                    alignment=ft.Alignment.CENTER,
+                    border_radius=12,
+                    bgcolor=kind_color,
+                ),
+                ft.Column(
+                    [
+                        ft.Text(
+                            f"{step.title}  •  {kind_label}",
+                            size=13,
+                            weight=ft.FontWeight.W_600,
+                            color=kind_color,
+                        ),
+                        ft.Text(step.detail, size=12, color=Colors.TEXT_MUTED),
+                    ],
+                    spacing=2,
+                ),
+            ],
+            spacing=Spacing.SM,
+        )
+
     def _on_identity_check(self, _event: ft.Event[ft.Button]) -> None:
         primary = self._identity_primary.value or ""
         secondary = self._identity_secondary.value or ""
         if not primary.strip():
-            self._identity_result.value = "أدخلIMEI/MEID الأساسي أولًا"
+            self._identity_result.value = "أدخل IMEI/MEID الأساسي أولًا"
             self._identity_result.color = Colors.WARNING_DARK
+            toast(self._page, self._identity_result.value or "", kind="warning")
             self._safe_update()
             return
 
@@ -474,6 +642,7 @@ class HomeView(ft.Column):
         return "المعرّف: الطول أو الصيغة غير معروفة"
 
     def _clear_details(self) -> None:
+        self._selected_device = None
         self._selected_device_name = None
         self._details.controls = []
         self._details_panel.visible = False
@@ -481,6 +650,12 @@ class HomeView(ft.Column):
         self._permission_button = None
         self._protocol_result.value = ""
         self._protocol_button = None
+        self._repair_result.controls = [
+            ft.Text(
+                "اختر جهازًا من القائمة أولًا لعرض خطة الإصلاح.",
+                color=Colors.TEXT_SECONDARY,
+            )
+        ]
 
     def _safe_update(self) -> None:
         try:
