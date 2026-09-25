@@ -208,6 +208,27 @@ def test_repair_panel_rejects_unknown_symptom_key() -> None:
     assert any("عرض غير معروف" in text for text in _repair_texts(view))
 
 
+def test_identity_audit_panel_reports_status_and_blocks_restore() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._identity_primary.value = "490154203237518"
+    view._identity_secondary.value = "490154203237526"
+    view._identity_owner_verified.value = False
+
+    view._on_identity_audit(cast(ft.Event[ft.Button], object()))
+
+    assert "الحالة" in view._identity_audit_result.value
+    assert "تلاعب محتمل" in view._identity_audit_result.value
+    assert "محجوبة" in view._identity_restore_result.value
+    assert "ملكية" in view._identity_audit_result.value
+
+    view._identity_owner_verified.value = True
+    view._on_identity_audit(cast(ft.Event[ft.Button], object()))
+
+    assert "موثّقة" in view._identity_audit_result.value
+    assert "محجوبة" in view._identity_restore_result.value
+
+
 def test_clear_details_resets_selected_device_and_prompts_again() -> None:
     page = cast(ft.Page, FakePage())
     view = HomeView(page)

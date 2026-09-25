@@ -15,6 +15,14 @@ from nanomobo.core.identity import (
     compare_identity,
     validate_identity,
 )
+from nanomobo.core.identity_audit import (
+    AuditStatus,
+    audit_identity,
+    create_backup,
+    ownership_label,
+    plan_restore,
+    status_label,
+)
 from nanomobo.core.repair_assistant import (
     RISK_LABELS,
     SYMPTOMS,
@@ -115,6 +123,12 @@ class HomeView(ft.Column):
             text_size=13,
         )
         self._identity_result = ft.Text("", color=Colors.TEXT_SECONDARY)
+        self._identity_owner_verified = ft.Checkbox(
+            label="تم إثبات ملكية الجهاز",
+            value=False,
+        )
+        self._identity_audit_result = ft.Text("", color=Colors.TEXT_SECONDARY)
+        self._identity_restore_result = ft.Text("", color=Colors.TEXT_SECONDARY)
         self._identity_panel = ft.Container(
             content=ft.Column(
                 controls=[
@@ -138,6 +152,21 @@ class HomeView(ft.Column):
                         bgcolor=Colors.PRIMARY,
                     ),
                     self._identity_result,
+                    ft.Text(
+                        "تدقيق الهوية",
+                        size=16,
+                        weight=ft.FontWeight.W_700,
+                        color=Colors.TEXT_PRIMARY,
+                    ),
+                    self._identity_owner_verified,
+                    ft.Button(
+                        "تدقيق ومقارنة بالأصل",
+                        on_click=self._on_identity_audit,
+                        color=Colors.PRIMARY,
+                        bgcolor=Colors.BACKGROUND_ALT,
+                    ),
+                    self._identity_audit_result,
+                    self._identity_restore_result,
                 ],
                 spacing=Spacing.SM,
             ),
@@ -629,6 +658,44 @@ class HomeView(ft.Column):
                 result_color = Colors.WARNING_DARK
         self._identity_result.value = "  •  ".join(messages)
         self._identity_result.color = result_color
+        self._safe_update()
+
+    def _on_identity_audit(self, _event: ft.Event[ft.Button]) -> None:
+        primary = self._identity_primary.value or ""
+        secondary = self._identity_secondary.value or ""
+        if not primary.strip():
+            self._identity_audit_result.value = "أدخل القيمة الحالية أولًا"
+            self._identity_audit_result.color = Colors.WARNING_DARK
+            toast(self._page, self._identity_audit_result.value or "", kind="warning")
+            self._safe_update()
+            return
+
+        owner_verified = bool(self._identity_owner_verified.value)
+        audit = audit_identity(primary, secondary, owner_verified=owner_verified)
+        status_color = {
+            AuditStatus.CLEAN: Colors.SUCCESS,
+            AuditStatus.TAMPERED: Colors.DANGER,
+            AuditStatus.INVALID: Colors.DANGER,
+            AuditStatus.INCOMPLETE: Colors.WARNING_DARK,
+        }[audit.status]
+        self._identity_audit_result.value = (
+            f"الحالة: {status_label(audit.status)}"
+            f"  •  الملكية: {ownership_label(audit.ownership)}"
+            f"  •  النتائج: {len(audit.findings)}"
+        )
+        self._identity_audit_result.color = status_color
+
+        backup = create_backup(
+            self._selected_device_name or "unknown",
+            primary,
+            secondary,
+            owner_verified=owner_verified,
+        )
+        plan = plan_restore(backup, owner_verified=owner_verified)
+        self._identity_restore_result.value = (
+            f"خطة استعادة الأصل: محجوبة ({plan.reason}) — لا كتابة من التطبيق"
+        )
+        self._identity_restore_result.color = Colors.WARNING_DARK
         self._safe_update()
 
     @staticmethod
