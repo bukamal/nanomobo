@@ -6,6 +6,7 @@ from typing import Any, cast
 import flet as ft
 
 from main import create_app
+from nanomobo.core.repair_assistant import Symptom
 from nanomobo.core.usb_bridge import UsbDeviceInfo
 from nanomobo.views.home_view import HomeView
 
@@ -114,3 +115,115 @@ def test_device_details_include_intelligence_panel_and_safe_recommendations() ->
     assert any("التحليل الذكي" in value for value in texts)
     assert any("%" in value for value in texts)
     assert any("قراءة فقط" in value for value in texts)
+
+
+def _collect_texts(control: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(control, ft.Text):
+        texts.append(str(control.value))
+    content = getattr(control, "content", None)
+    if content is not None:
+        texts.extend(_collect_texts(content))
+    children = getattr(control, "controls", None)
+    if isinstance(children, list):
+        for child in children:
+            texts.extend(_collect_texts(child))
+    return texts
+
+
+def _repair_texts(view: HomeView) -> list[str]:
+    return _collect_texts(view._repair_result)
+
+
+def test_repair_panel_asks_for_a_device_first() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._symptom_dropdown.value = Symptom.DEVICE_NOT_BOOTING.value
+
+    view._render_repair_plan()
+
+    assert any("اختر جهازًا" in text for text in _repair_texts(view))
+
+
+def test_repair_panel_asks_for_a_symptom_after_device_selection() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._select_device(
+        UsbDeviceInfo(
+            device_name="1/1",
+            vendor_id=0x05C6,
+            product_id=0x9008,
+            device_class=0xFF,
+            product="Test Device",
+        )
+    )
+    view._symptom_dropdown.value = None
+
+    view._render_repair_plan()
+
+    assert any("اختر العَرَض" in text for text in _repair_texts(view))
+
+
+def test_repair_panel_builds_report_for_known_symptom() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    device = UsbDeviceInfo(
+        device_name="1/1",
+        vendor_id=0x05C6,
+        product_id=0x9008,
+        device_class=0xFF,
+        product="Test Device",
+    )
+    view._select_device(device)
+    view._symptom_dropdown.value = Symptom.DEVICE_NOT_BOOTING.value
+
+    view._render_repair_plan()
+
+    texts = _repair_texts(view)
+    assert any("خطة قراءة فقط" in text for text in texts)
+    assert any("المخاطر" in text for text in texts)
+    assert any("التقرير" in text for text in texts)
+    report_containers = [
+        control for control in view._repair_result.controls if isinstance(control, ft.Container)
+    ]
+    assert report_containers
+
+
+def test_repair_panel_rejects_unknown_symptom_key() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._select_device(
+        UsbDeviceInfo(
+            device_name="1/1",
+            vendor_id=0x05C6,
+            product_id=0x9008,
+            device_class=0xFF,
+            product="Test Device",
+        )
+    )
+    view._symptom_dropdown.value = "not-a-symptom"
+
+    view._render_repair_plan()
+
+    assert any("عرض غير معروف" in text for text in _repair_texts(view))
+
+
+def test_clear_details_resets_selected_device_and_prompts_again() -> None:
+    page = cast(ft.Page, FakePage())
+    view = HomeView(page)
+    view._select_device(
+        UsbDeviceInfo(
+            device_name="1/1",
+            vendor_id=0x05C6,
+            product_id=0x9008,
+            device_class=0xFF,
+            product="Test Device",
+        )
+    )
+
+    view._clear_details()
+
+    assert view._selected_device is None
+    assert view._selected_device_name is None
+    assert view._details_panel.visible is False
+    assert any("اختر جهازًا" in text for text in _repair_texts(view))
